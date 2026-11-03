@@ -126,6 +126,14 @@
     animation:up .25s cubic-bezier(.2,.8,.3,1);max-width:780px;margin:0 auto}
   @keyframes up{from{transform:translateY(18px);opacity:.6}to{transform:none;opacity:1}}
   .grab{width:44px;height:3px;background:var(--a1);box-shadow:0 0 8px var(--a1);margin:6px auto 14px}
+  .pbar{position:sticky;top:-8px;z-index:3;display:flex;align-items:center;gap:10px;margin:0 -18px;padding:12px 18px 10px;
+    background:linear-gradient(to bottom,#0e0c1c 80%,rgba(14,12,28,0));}
+  .pbar .ptitle{flex:1;font-family:var(--mono);font-size:13px;font-weight:800;letter-spacing:.16em;color:var(--y);text-shadow:0 0 6px rgba(252,238,10,.5)}
+  .pbtn{height:36px;padding:0 14px;border:1px solid var(--a1);background:var(--a1soft);color:var(--a1);
+    clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px));
+    font:inherit;font-family:var(--mono);font-size:13.5px;font-weight:800;letter-spacing:.06em;cursor:pointer;text-shadow:0 0 6px var(--a1)}
+  .pbtn:active{transform:scale(.96)}
+  .pbtn.x{width:36px;padding:0;font-size:16px}
   .panel h3{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.16em;color:var(--y);margin:22px 0 9px;font-weight:700}
   .panel h3::before{content:'// ';color:var(--a2)}
   .panel h3:first-of-type{margin-top:4px}
@@ -243,7 +251,7 @@
 <div id="phr">
   <div class="veil"></div>
   <div class="panel">
-    <div class="grab"></div>
+    <div class="pbar"><button class="pbtn" data-back>‹ 返回</button><div class="ptitle">常用语</div><button class="pbtn x" data-back aria-label="关闭">✕</button></div>
     <h3>常用语 · 点一下放大给对方看</h3>
     <div id="phrList"></div>
     <div class="btnrow"><button id="btnPhrPrep" class="primary">预先翻译（之后断网也能用）</button></div>
@@ -268,7 +276,7 @@
 <div id="sheet">
   <div class="veil" data-close></div>
   <div class="panel">
-    <div class="grab"></div>
+    <div class="pbar"><button class="pbtn" data-back>‹ 返回</button><div class="ptitle">设置</div><button class="pbtn x" data-back aria-label="关闭">✕</button></div>
 
     <h3>翻译通道</h3>
     <div class="field">
@@ -1157,8 +1165,18 @@ function exportMD(){
 }
 
 /* ===================== 设置 ===================== */
-function openSheet(){ $('#sheet').classList.add('show'); fillSheet(); }
-function closeSheet(){ $('#sheet').classList.remove('show'); }
+// 浮层返回：页内按钮 + iOS 左滑返回 / 浏览器返回键都能关闭
+function ovPush(){ try{ if(!(history.state && history.state.ov)) history.pushState({ ov:1 }, ''); }catch(_){} }
+function ovPop(){ try{ if(history.state && history.state.ov) history.back(); }catch(_){} }
+function anyOverlay(){ return ['#sheet','#phr','#big'].some(q => $(q).classList.contains('show')); }
+window.addEventListener('popstate', () => {
+  ['#sheet','#phr','#big'].forEach(q => $(q).classList.remove('show'));
+});
+function openSheet(){ $('#sheet').classList.add('show'); fillSheet(); ovPush(); }
+function closeSheet(){ $('#sheet').classList.remove('show'); if(!anyOverlay()) ovPop(); }
+function closePhr(){ $('#phr').classList.remove('show'); if(!anyOverlay()) ovPop(); }
+document.querySelectorAll('#sheet [data-back]').forEach(b => b.addEventListener('click', closeSheet));
+document.querySelectorAll('#phr [data-back]').forEach(b => b.addEventListener('click', closePhr));
 $('#btnSheet').addEventListener('click', openSheet);
 $('#sheet').addEventListener('click', e => { if(e.target.dataset.close !== undefined) closeSheet(); });
 $('#sheet .veil').addEventListener('click', closeSheet);
@@ -1365,9 +1383,9 @@ $('#btnPhr').addEventListener('click', () => {
   $('#fPhr').value = S.phrases || DEFAULT_PHR;
   $('#phrMsg').textContent = '';
   renderPhr();
-  $('#phr').classList.add('show');
+  $('#phr').classList.add('show'); ovPush();
 });
-$('#phr .veil').addEventListener('click', () => $('#phr').classList.remove('show'));
+$('#phr .veil').addEventListener('click', closePhr);
 $('#fPhr').addEventListener('input', e => { S.phrases = e.target.value; save(); renderPhr(); });
 $('#btnPhrPrep').addEventListener('click', async e => {
   const btn = e.currentTarget, msg = $('#phrMsg');
