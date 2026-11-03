@@ -522,6 +522,8 @@ function startListen(){
 
 function stopListen(){
   listening = false;
+  clearTimeout(stallTimer);
+  if(statEl.dataset.stall){ statEl.textContent=''; delete statEl.dataset.stall; }
   recSuspended = false;
   clearTimeout(restartTimer);
   if(rec){ try{ rec.onend = null; rec.abort(); }catch(e){} rec = null; }
@@ -546,12 +548,13 @@ function spawnRec(){
   r.maxAlternatives = 1;
 
   segBase = 0;
-  r.onstart = () => { if(g === recGen) setLive(true); };
+  r.onstart = () => { if(g === recGen){ setLive(true); clearTimeout(stallTimer); if(statEl.dataset.stall){ statEl.textContent=''; delete statEl.dataset.stall; } } };
   r.onresult = e => { if(g === recGen) handleResult(e); };
 
   r.onerror = ev => {
     if(g !== recGen) return;
     const err = ev.error;
+    lastRecErr = err;
     if(err === 'not-allowed' || err === 'service-not-allowed'){
       listening = false; paintRun(); setLive(false);
       toast('语音识别被拒绝了。检查：设置 → Safari → 麦克风；以及「设置 → Siri 与搜索」里 Siri 必须开启。');
@@ -569,7 +572,13 @@ function spawnRec(){
     setLive(false);
     if(!listening || recSuspended) return;
     clearTimeout(restartTimer);
-    restartTimer = setTimeout(() => { if(listening && !recSuspended) spawnRec(); }, 260);
+    // iOS 上同一个识别对象直接再 start() 比新建更稳；不行再新建
+    restartTimer = setTimeout(() => {
+      if(!listening || recSuspended || g !== recGen) return;
+      try{ r.start(); rec = r; }
+      catch(_){ spawnRec(); }
+      watchStall();
+    }, 200);
   };
 
   rec = r;
@@ -578,6 +587,25 @@ function spawnRec(){
     clearTimeout(restartTimer);
     restartTimer = setTimeout(() => { if(listening && !recSuspended) spawnRec(); }, 400);
   }
+}
+
+/* 重启后 2.5 秒还没真正开始收音，说明 iOS 不让脚本自己重启：提示点一下屏幕，用户一点就能接上 */
+let stallTimer = null, lastRecErr = '';
+function watchStall(){
+  clearTimeout(stallTimer);
+  stallTimer = setTimeout(() => {
+    if(!listening || recSuspended || S.ptt) return;
+    statEl.dataset.stall = '1';
+    statEl.textContent = '收音断了' + (lastRecErr ? '（' + lastRecErr + '）' : '') + '，点一下屏幕继续';
+    const go = () => {
+      document.removeEventListener('pointerdown', go, true);
+      if(listening && !recSuspended){
+        if(rec){ try{ rec.onend = null; rec.abort(); }catch(_){} rec = null; }
+        spawnRec(); watchStall();
+      }
+    };
+    document.addEventListener('pointerdown', go, true);
+  }, 2500);
 }
 
 /* 朗读期间主动让出音频通道（半双工）。iOS 上 TTS 和识别同时跑容易互相打架：
