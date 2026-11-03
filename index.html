@@ -567,6 +567,7 @@ function spawnRec(){
   r.onend = () => {
     if(g !== recGen) return;
     setLive(false);
+    finalizeUtt();
     if(!listening || recSuspended) return;
     clearTimeout(restartTimer);
     restartTimer = setTimeout(() => { if(listening && !recSuspended) spawnRec(); }, 260);
@@ -587,6 +588,7 @@ setInterval(() => {
   if(now - lastResultAt > 15000 && now - sessStart > 15000){
     try{ rec.onend = null; rec.abort(); }catch(_){}
     rec = null; recGen++;
+    finalizeUtt();
     spawnRec();
   }
 }, 5000);
@@ -651,6 +653,19 @@ function handleResult(e){
     if(utt.inflight) utt.flush = true;          // 抢译还在路上：等它回来再补译剩余部分
     else if(remainder(utt).trim()) fireTranslate(utt);
   }
+}
+
+/* 一段识别会话结束时，iOS 常常不给 final，只留着最后的 interim。
+   不把它收尾的话，下一段的新内容会覆盖进同一张卡片 —— 看起来就是"整场只有一句"。 */
+function finalizeUtt(){
+  if(!utt || utt.done) return;
+  const t = (utt.text || '').trim();
+  livebar.textContent = '';
+  if(!t){ utt = null; return; }
+  utt.done = true; utt.tSpeechEnd = Date.now();
+  lastFinalText = t; lastFinalAt = Date.now();
+  if(utt.inflight) utt.flush = true;
+  else if(remainder(utt).trim()) fireTranslate(utt);
 }
 
 function newUtt(text, t){
