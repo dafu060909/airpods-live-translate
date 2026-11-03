@@ -60,9 +60,11 @@ async function proxyTranslate(req, res) {
   catch (e) { return json(res, 400, { error: { message: '请求体不是合法 JSON' } }); }
 
   // 只允许这两个模型，防止被当成通用代理刷别的模型
-  if (payload.model !== 'deepseek-chat' && payload.model !== 'deepseek-reasoner') {
-    payload.model = 'deepseek-chat';
+  if (payload.model !== 'deepseek-flash' && payload.model !== 'deepseek-v4-pro') {
+    payload.model = 'deepseek-flash';
   }
+  // 同传要低延迟：强制关闭思考模式
+  payload.thinking = { type: 'disabled' };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60000);

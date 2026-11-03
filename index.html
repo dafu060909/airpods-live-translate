@@ -286,10 +286,10 @@
       </div>
     </div>
     <div class="row">
-      <div><div class="lab">模型</div><div class="sub">同传用 chat 最快</div></div>
+      <div><div class="lab">模型</div><div class="sub">同传用 flash 最快（已关闭思考模式）</div></div>
       <select id="fModel">
-        <option value="deepseek-chat">deepseek-chat</option>
-        <option value="deepseek-reasoner">deepseek-reasoner（慢，不适合同传）</option>
+        <option value="deepseek-flash">deepseek-flash（快，推荐）</option>
+        <option value="deepseek-v4-pro">deepseek-v4-pro（更准但更贵更慢）</option>
       </select>
     </div>
     <div class="btnrow"><button id="btnTest">测试连接</button><button id="btnForget" class="warn">清除 Key</button></div>
@@ -394,7 +394,7 @@ const LANGS = [
 const langOf = c => LANGS.find(x => x.code === c) || LANGS[0];
 
 const DEFAULTS = {
-  apiKey:'', model:'deepseek-chat',
+  apiKey:'', model:'deepseek-flash',
   myLang:'zh-CN', theirLang:'en-US',
   provisional:true, policy:'skip', rate:1.05,
   echoGuard:false, speak:true, speakerOut:true, duplex:'full',
@@ -409,6 +409,7 @@ function load(){
   let o;
   try{ o = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(LS) || '{}')); }
   catch(e){ o = Object.assign({}, DEFAULTS); }
+  if(o.model !== 'deepseek-flash' && o.model !== 'deepseek-v4-pro') o.model = 'deepseek-flash';
   if(o.rememberKey === false){ try{ o.apiKey = sessionStorage.getItem(LS_KEY) || ''; }catch(e){ o.apiKey = ''; } }
   return o;
 }
@@ -798,7 +799,7 @@ async function streamOnce(msgs, card){
     res = await fetch(url, {
       method:'POST', headers, signal:ac.signal,
       body: JSON.stringify({
-        model:S.model, messages:msgs, stream:true,
+        model:S.model, messages:msgs, stream:true, thinking:{ type:'disabled' },
         temperature:1.3, max_tokens:800,
       }),
     });
@@ -1247,7 +1248,7 @@ $('#btnTest').addEventListener('click', async () => {
     if(!CH.proxy) headers['Authorization'] = 'Bearer ' + (S.apiKey || '');
     const r = await fetch(url, {
       method:'POST', headers,
-      body: JSON.stringify({ model:S.model, messages:[{ role:'user', content:'ping' }], max_tokens:4, stream:false }),
+      body: JSON.stringify({ model:S.model, thinking:{ type:'disabled' }, messages:[{ role:'user', content:'ping' }], max_tokens:4, stream:false }),
     });
     if(r.ok){ msg.className = 'ok'; msg.textContent = '✓ 通道正常，可以开始同传'; }
     else {
@@ -1295,7 +1296,7 @@ async function translateOnce(text){
     const r = await fetch(url, {
       method:'POST', headers, signal:ac.signal,
       body: JSON.stringify({
-        model:'deepseek-chat', stream:false, temperature:1.3, max_tokens:300,
+        model:S.model, thinking:{ type:'disabled' }, stream:false, temperature:1.3, max_tokens:300,
         messages:[{ role:'system', content:sysPrompt(d) }, { role:'user', content:text }],
       }),
     });
