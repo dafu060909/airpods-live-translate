@@ -440,7 +440,7 @@ let mode = 'listen';
 let listening = false;
 let rec = null, recGen = 0, restartTimer = null, recSuspended = false;
 /* 长时间（讲座）防卡：会话分段 + 识别看门狗 + 只保留最近卡片在页面上 */
-let sessStart = 0, lastResultAt = 0, segRequested = false;
+let segBase = 0;   // 本段识别里已经切出去翻译的字数（软切分，不碰识别本身）
 const MAX_DOM_CARDS = 40;
 const isCJK = code => /^(zh|ja|ko|yue)/i.test(code || '');
 const cards = [];
@@ -545,9 +545,9 @@ function spawnRec(){
   r.interimResults = true;
   r.maxAlternatives = 1;
 
-  sessStart = lastResultAt = Date.now(); segRequested = false;
+  segBase = 0;
   r.onstart = () => { if(g === recGen) setLive(true); };
-  r.onresult = e => { if(g === recGen){ lastResultAt = Date.now(); handleResult(e); } };
+  r.onresult = e => { if(g === recGen) handleResult(e); };
 
   r.onerror = ev => {
     if(g !== recGen) return;
@@ -581,18 +581,6 @@ function spawnRec(){
   }
 }
 
-// 看门狗：iOS 长时间识别偶尔会"假活"（不报错也不出字），15 秒没动静就重建
-setInterval(() => {
-  if(!listening || recSuspended || S.ptt || !rec) return;
-  const now = Date.now();
-  if(now - lastResultAt > 15000 && now - sessStart > 15000){
-    try{ rec.onend = null; rec.abort(); }catch(_){}
-    rec = null; recGen++;
-    finalizeUtt();
-    spawnRec();
-  }
-}, 5000);
-
 /* 朗读期间主动让出音频通道（半双工）。iOS 上 TTS 和识别同时跑容易互相打架：
    要么识别被踹断，要么耳机漏音把译文又听回去。这一对函数就是兜底开关。 */
 function suspendRec(){
@@ -622,22 +610,25 @@ function handleResult(e){
 
   // continuous 模式下 interim 就是「当前这一句尚未定稿的全文」，直接覆盖即可，不要拼接
   if(interim){
-    if(utt && !utt.done){ utt.text = interim; }
-    else { utt = newUtt(interim); }
-    livebar.textContent = interim.length > 160 ? '…' + interim.slice(-160) : interim;
-    maybeProvision();
-    // 讲座里主讲人不停顿，iOS 会把一整段越攒越长，越来越慢直到卡死。
-    // 太长或太久就主动 stop()：系统会先吐出定稿，再由 onend 自动开新一段。
-    if(!S.ptt && !segRequested && rec){
-      const lim = isCJK(dir().src) ? 90 : 220;
-      if(interim.length > lim || now - sessStart > 50000){
-        segRequested = true;
-        try{ rec.stop(); }catch(_){}
+    // 讲座里主讲人不停顿，iOS 会把一整段越攒越长。不去 stop() 识别（iOS 上停了就可能起不来），
+    // 而是在页面这边软切分：超过一定长度就把前面的部分收尾翻译，后面的内容进新卡片。
+    if(interim.length < segBase) segBase = 0;
+    const cur = interim.slice(segBase);
+    if(cur.trim()){
+      if(utt && !utt.done){ utt.text = cur; }
+      else { utt = newUtt(cur); }
+      livebar.textContent = cur.length > 160 ? '…' + cur.slice(-160) : cur;
+      maybeProvision();
+      const lim = isCJK(dir().src) ? 80 : 200;
+      if(!S.ptt && cur.length > lim){
+        finalizeUtt();
+        segBase = interim.length;
       }
     }
   }
 
-  for(const f of finals){
+  for(let f of finals){
+    if(segBase){ f = f.slice(segBase).trim(); segBase = 0; }   // 前半段已经软切分翻过了
     if(!f) continue;
     if(S.echoGuard && now < tts.mutedUntil) continue;
     // Safari 在会话重启后会重发上一句的 final，用相似度而不是全等来去重
